@@ -1,6 +1,7 @@
 import datetime
 import logging
 import os
+import json
 
 import pytest
 import requests
@@ -36,11 +37,17 @@ def pytest_addoption(parser):
                      help="run only Windows tests")
 
 
-def _add_xfail_markers(item):
+def _iter_xfailflake(tests):
     """
-    Mute flaky Integration Tests with custom pytest marker.
-    Rationale for doing this is mentioned at DCOS-45308.
+    Yields the tests from the iterator `tests` that have the xfailflake marker.
     """
+    for test in tests:
+        if not hasattr(test.obj, 'xfailflake'):
+            continue
+        yield test
+
+
+def _iter_xfail_markers(item):
     xfailflake_markers = [
         marker for marker in item.iter_markers() if marker.name == 'xfailflake'
     ]
@@ -48,6 +55,16 @@ def _add_xfail_markers(item):
         assert 'reason' in xfailflake_marker.kwargs
         assert 'jira' in xfailflake_marker.kwargs
         assert xfailflake_marker.kwargs['jira'].startswith('DCOS')
+
+        yield xfailflake_marker
+
+
+def _add_xfail_markers(item):
+    """
+    Mute flaky Integration Tests with custom pytest marker.
+    Rationale for doing this is mentioned at DCOS-45308.
+    """
+    for xfailflake_marker in _iter_xfail_markers(item):
         # Show the JIRA in the printed reason.
         xfailflake_marker.kwargs['reason'] = '{jira} - {reason}'.format(
             jira=xfailflake_marker.kwargs['jira'],
@@ -72,6 +89,24 @@ def _add_xfail_markers(item):
             **xfailflake_marker.kwargs,
         )
         item.add_marker(xfail_marker)
+
+
+def _write_xfailflake_report(tests):
+    """
+    Writes a report of all xfailflake tagged tests to the current directory.
+    """
+    report = []
+
+    for flake in _iter_xfailflake(tests):
+        for xfailflake_marker in _iter_xfail_markers(flake):
+            report.append({
+                "name": flake.name,
+                "module": flake.module.__name__,
+                "path": flake.module.__file__,
+                "xfailflake": xfailflake_marker.kwargs
+            })
+
+    json.dump(report, open('xfailflake.json', 'w'))
 
 
 def pytest_runtest_setup(item):
@@ -102,6 +137,7 @@ def pytest_collection_modifyitems(session, config, items):
         else:
             new_items.append(item)
     items[:] = new_items + last_items
+    _write_xfailflake_report(items)
 
 
 # Note(JP): Attempt to reset Marathon state before and after every test run in
