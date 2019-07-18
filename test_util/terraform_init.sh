@@ -59,6 +59,9 @@ if [ "$USE_SPOTBLOCK" != "0" ]; then
 {
  "dcos-terraform/instance/aws": {
    "source": "$dcos_terraform_instance_aws"
+ },
+ "dcos-terraform/dcos-install-remote-exec-ansible/null": {
+   "source": "git::https://github.com/dcos-terraform/terraform-null-dcos-install-remote-exec-ansible.git?ref=feature/ci-optimization"
  }
 }
 EOF
